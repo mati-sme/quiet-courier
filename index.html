@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#1a2438">
+<meta name="description" content="Quiet Courier — deliver packages with family. One silent saboteur quietly messes things up. Family-friendly party game.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Quiet Courier">
+<title>Quiet Courier</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='14' y='22' width='36' height='28' rx='4' fill='%235b8cff'/%3E%3Cpath d='M20 22 L32 12 L44 22' fill='%23ffd84a'/%3E%3Crect x='28' y='30' width='8' height='12' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <!-- Title / home -->
+  <section id="screen-home" class="screen">
+    <div class="hero">
+      <div class="logo-boom" aria-hidden="true">📦</div>
+      <h1>Quiet Courier</h1>
+      <p class="tagline">Deliver packages · Spot the silent saboteur</p>
+    </div>
+    <div class="stack">
+      <label class="field">
+        <span>Your name</span>
+        <input id="nameInput" type="text" maxlength="12" autocomplete="nickname" placeholder="Player" enterkeyhint="done">
+      </label>
+      <button id="btnCreate" class="btn big primary">Create room</button>
+      <button id="btnJoinShow" class="btn big">Join room</button>
+    </div>
+    <p class="hint">3–8 players on phones. Family-friendly · Kids Mode available.</p>
+  </section>
+
+  <!-- Join form -->
+  <section id="screen-join" class="screen hidden">
+    <h2>Join a room</h2>
+    <div class="stack">
+      <label class="field">
+        <span>Room code</span>
+        <input id="codeInput" type="text" maxlength="4" autocomplete="off" autocapitalize="characters" placeholder="ABCD" enterkeyhint="go">
+      </label>
+      <button id="btnJoin" class="btn big primary">Join</button>
+      <button id="btnJoinBack" class="btn ghost">Back</button>
+    </div>
+    <p id="joinErr" class="err" hidden></p>
+  </section>
+
+  <!-- Lobby -->
+  <section id="screen-lobby" class="screen hidden">
+    <h2>Lobby</h2>
+    <div class="code-card">
+      <span class="label">Room code</span>
+      <div id="lobbyCode" class="code">····</div>
+      <p class="hint">Share this code with family</p>
+    </div>
+    <ul id="playerList" class="player-list"></ul>
+    <label id="kidsWrap" class="toggle hidden">
+      <input type="checkbox" id="kidsMode">
+      <span>Kids Mode <small>(slower saboteur · longer round · clearer tells)</small></span>
+    </label>
+    <div class="stack">
+      <button id="btnStart" class="btn big primary hidden">Start match</button>
+      <button id="btnLeave" class="btn ghost">Leave</button>
+    </div>
+    <p id="lobbyStatus" class="hint">Waiting for host…</p>
+  </section>
+
+  <!-- Play -->
+  <section id="screen-play" class="screen play hidden">
+    <canvas id="cv" width="720" height="1280"></canvas>
+    <div id="hud">
+      <div class="hud-top">
+        <div id="timeBar" class="fuse" title="Time">
+          <div id="timeFill"></div>
+          <b id="timeTxt">—</b>
+        </div>
+        <div id="roleBadge" class="role-badge hidden">📦 Courier</div>
+        <div class="hud-row">
+          <div class="chip">Delivered <b id="quotaTxt">0/0</b></div>
+          <div class="chip chip-warn">Fails <b id="failTxt">0/0</b></div>
+        </div>
+        <div id="carryChip" class="carry-chip hidden">Holding…</div>
+      </div>
+      <div id="toast"></div>
+      <div id="sabPad" class="sab-pad hidden">
+        <div class="sab-cd" id="sabCd">Ready!</div>
+        <button type="button" data-action="jam" class="sab-btn" title="Jam a drop zone">🚫 Jam</button>
+        <button type="button" data-action="swap" class="sab-btn" title="Swap package color">🎨 Swap</button>
+        <button type="button" data-action="misdirect" class="sab-btn" title="Misdirect nearby courier">💫 Dizzy</button>
+      </div>
+      <div id="joy" class="hidden"><div class="ring"></div><div class="knob"></div></div>
+    </div>
+  </section>
+
+  <!-- Winner / reveal -->
+  <section id="screen-win" class="screen hidden">
+    <div class="hero">
+      <div class="logo-boom" id="winEmoji">🎉</div>
+      <h1 id="winTitle">Round over!</h1>
+      <p id="winReveal" class="reveal-name">🤫</p>
+      <p id="winName" class="tagline"></p>
+    </div>
+    <div class="stack">
+      <button id="btnAgain" class="btn big primary">Play again</button>
+      <button id="btnHome" class="btn ghost">Back to home</button>
+    </div>
+  </section>
+
+  <div id="overlay" class="overlay hidden">
+    <div class="spinner"></div>
+    <p id="overlayTxt">Connecting…</p>
+  </div>
+</div>
+
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
