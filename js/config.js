@@ -5,7 +5,7 @@
  */
 'use strict';
 
-export const PARTYKIT_HOST_DEFAULT = 'party-games.PLACEHOLDER.partykit.dev';
+export const PARTYKIT_HOST_DEFAULT = 'party-games.mati-sme.workers.dev';
 
 export function getPartyHost() {
   try {
