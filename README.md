@@ -18,60 +18,46 @@ Ages: mixed groups (~4–6 + adults). Big UI, clear icons, Kids Mode (longer rou
 
 ## Run locally
 
-Static files only — no build step.
-
 ```bash
 cd /workspace/projects/quiet-courier
 python3 -m http.server 8080
 ```
 
-Open `http://localhost:8080` in multiple tabs. (ES modules need a real origin — don’t open as `file://`.)
+Override PartyKit host: `?pk=localhost:1999` when running `party-games-server` locally.
 
 ## Publish to GitHub Pages
 
-```bash
-git init
-git add .
-git commit -m "Initial Quiet Courier"
-git branch -M main
-git remote add origin https://github.com/mati-sme/quiet-courier.git
-git push -u origin main
-# Settings → Pages → Deploy from branch → main / (root)
-```
+Push to `mati-sme/quiet-courier` main. Bump `CACHE` in `sw.js` (currently `quiet-courier-v2`).
 
 Live URL: `https://mati-sme.github.io/quiet-courier/`
 
-After each content change, bump `CACHE` in `sw.js` (e.g. `quiet-courier-v2`) so phones pick up the new files.
-
-## Networking (v1)
+## Networking (v2 — PartyKit)
 
 | Piece | Choice |
 | --- | --- |
-| Transport | **WebRTC data channels** via [PeerJS](https://peerjs.com/) |
-| CDN | `https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js` |
-| Signaling | Free public PeerServer `0.peerjs.com` |
-| Authority | **Host phone** owns sim + broadcasts snapshots ~20 Hz |
-| Room codes | Host registers Peer id `qc-XXXX`. Joiners connect to that id. |
+| Transport | WebSocket to PartyKit |
+| Authority | **Server** runs packages / saboteur / win at ~20 Hz |
+| Client feel | Local movement prediction + soft reconcile |
+| Room codes | 4 letters; room id `qc-XXXX` |
+| Roles | Server sends personalized snapshots (hide other roles until reveal) |
 
-### Caveats
+Shared server: `/workspace/projects/party-games-server/`. Set host in `js/config.js` after deploy.
 
-- Free PeerJS cloud can be rate-limited or briefly down. Some strict carrier NATs may fail WebRTC.
-- Host must **keep the tab open** — if the host leaves, the room dies.
-- No accounts, no paid APIs, no backend of our own for v1.
+### Deploy server (one-time)
+
+```bash
+cd ../party-games-server
+npm install && npx partykit login && npx partykit deploy
+```
 
 ## Files
 
-- `index.html` — screens (home, join, lobby, play, win/reveal)
-- `style.css` — mobile-first UI
-- `js/main.js` — lobby + loop glue
-- `js/net.js` — PeerJS room create/join (`qc-` prefix)
-- `js/game.js` — authoritative sim (packages, saboteur, pets, win)
-- `js/input.js` — floating joystick (bottom-left preference) + keyboard
-- `js/render.js` — canvas arena
-- `js/audio.js` — WebAudio SFX (no audio files)
-- `sw.js` — cache-first PWA shell (`quiet-courier-v1`)
-- `manifest.webmanifest` — installable shortcut
+- `js/config.js` — PartyKit host
+- `js/net.js` — WebSocket create/join
+- `js/main.js` — lobby + prediction loop
+- `js/game.js` — sim + serializeFor / predict
+- `sw.js` — `quiet-courier-v2`
 
 ## License
 
-Made for Matias’s party-game shelf. Hand-written scaffold; no paid APIs, no generated image assets.
+Made for Matias’s party-game shelf. Hand-written; no paid APIs.

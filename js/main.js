@@ -1,10 +1,10 @@
 /**
- * Quiet Courier — app bootstrap, lobby, host sim loop, client mirror.
+ * Quiet Courier — lobby + client loop. Authority lives on PartyKit.
  */
 'use strict';
 
 import { NetRoom } from './net.js';
-import { createMatch, applyInput, step, serializeFor, applySnapshot, myRole, PKG_COLORS } from './game.js';
+import { applySnapshot, predictMove, myRole, PKG_COLORS } from './game.js';
 import { bindInput, getMove, consumeAction, queueAction, resetInput } from './input.js';
 import { bindCanvas, draw } from './render.js';
 import { unlockAudio, SFX } from './audio.js';
@@ -26,7 +26,8 @@ let lastTs = 0;
 let toastTimer = 0;
 let lastTimeBucket = -1;
 let kidsMode = false;
-let localRole = null; // remembered so clients keep their role across snapshots
+let localRole = null;
+let inputAcc = 0;
 
 function show(name) {
   for (const [k, el] of Object.entries(screens)) {
@@ -115,7 +116,6 @@ function updateHud() {
   $('roleBadge').textContent = isSab ? '🤫 You are the Quiet Saboteur' : '📦 You are a Courier';
   $('roleBadge').classList.toggle('sab', isSab);
 
-  // saboteur action pad
   const pad = $('sabPad');
   if (pad) {
     pad.classList.toggle('hidden', !isSab || match.phase !== 'play');
@@ -128,7 +128,6 @@ function updateHud() {
     $('sabCd').textContent = ready ? 'Ready!' : cd.toFixed(1) + 's';
   }
 
-  // carrying chip
   const p = match.players.find((pl) => pl.id === me);
   if (p && p.carrying) {
     const pkg = match.packages.find((k) => k.id === p.carrying);
@@ -150,7 +149,7 @@ function updateHud() {
 }
 
 function handleEvents(events) {
-  for (const ev of events) {
+  for (const ev of events || []) {
     if (ev.type === 'pickup') {
       SFX.pickup();
       if (ev.id === (room && room.localId)) toast(`📦 Picked up ${colorLabel(ev.colorId)}`, '', 1200);
@@ -187,7 +186,6 @@ function endMatch() {
   const side = match && match.winnerSide;
   $('winTitle').textContent = side === 'couriers' ? 'Couriers win!' : 'Saboteur wins!';
   const sabs = (match.players || []).filter((p) => p.role === 'saboteur' || (match.saboteurs || []).includes(p.id));
-  // ensure roles visible
   for (const p of match.players) {
     if ((match.saboteurs || []).includes(p.id)) p.role = 'saboteur';
   }
@@ -203,17 +201,7 @@ function startMatchFromLobby() {
   if (!room || room.role !== 'host') return;
   if (room.players.length < 3 || room.players.length > 8) return;
   kidsMode = $('kidsMode').checked;
-  const roster = room.players.map((p) => ({ id: p.id, name: p.name }));
-  match = createMatch(roster, kidsMode);
-  localRole = myRole(match, room.localId);
-  // send personalized start so each client learns only their role
-  for (const [pid, c] of room.conns) {
-    if (!c.open) continue;
-    const player = room.players.find((p) => p.peerId === pid);
-    const viewerId = player ? player.id : null;
-    c.send({ type: 'start', kidsMode, snapshot: serializeFor(match, viewerId) });
-  }
-  enterPlay();
+  room.send({ type: 'start', kidsMode });
 }
 
 function enterPlay() {
@@ -221,6 +209,7 @@ function enterPlay() {
   resetInput();
   lastTs = 0;
   lastTimeBucket = -1;
+  inputAcc = 0;
   if (match && room) localRole = localRole || myRole(match, room.localId);
   requestAnimationFrame(() => {
     window.dispatchEvent(new Event('resize'));
@@ -248,25 +237,18 @@ function startLoop() {
     const move = getMove();
     const action = consumeAction();
 
-    if (room && room.role === 'host' && match && match.phase === 'play') {
-      applyInput(match, room.localId, move.dx, move.dy, action);
-      const wasPlay = match.phase === 'play';
-      const events = step(match, dt);
-      handleEvents(events);
-      if (!tick._acc) tick._acc = 0;
-      tick._acc += dt;
-      const phaseChanged = wasPlay && match.phase !== 'play';
-      if (tick._acc >= 0.05 || phaseChanged) {
-        tick._acc = 0;
-        for (const [pid, c] of room.conns) {
-          if (!c.open) continue;
-          const player = room.players.find((p) => p.peerId === pid);
-          const viewerId = player ? player.id : null;
-          c.send({ type: 'state', snapshot: serializeFor(match, viewerId) });
-        }
+    if (room && match && match.phase === 'play') {
+      predictMove(match, room.localId, move.dx, move.dy, dt);
+      inputAcc += dt;
+      if (inputAcc >= 0.05 || action) {
+        inputAcc = 0;
+        room.send({
+          type: 'input',
+          dx: move.dx,
+          dy: move.dy,
+          action: action || null,
+        });
       }
-    } else if (room && room.role === 'client') {
-      room.sendToHost({ type: 'input', id: room.localId, dx: move.dx, dy: move.dy, action });
     }
 
     draw(match, room && room.localId, ts);
@@ -282,54 +264,27 @@ function stopLoop() {
 }
 
 function onNetMessage(msg) {
-  if (msg.type === 'input' && room.role === 'host' && match) {
-    applyInput(match, msg.id, msg.dx || 0, msg.dy || 0, msg.action || null);
-  } else if (msg.type === 'start' && room.role === 'client') {
+  if (msg.type === 'start') {
     kidsMode = !!msg.kidsMode;
     match = applySnapshot(null, msg.snapshot);
     localRole = myRole(match, room.localId);
     enterPlay();
-  } else if (msg.type === 'state' && room.role === 'client') {
-    const prevDel = match && match.delivered;
-    const prevFail = match && match.failed;
-    const prevJam = match && JSON.stringify(match.jammed);
-    const prevCarry = match && match.players.map((p) => p.id + ':' + p.carrying).join('|');
-    match = applySnapshot(match, msg.snapshot);
-    // keep local role sticky
+  } else if (msg.type === 'state') {
+    match = applySnapshot(match, msg.snapshot, room && room.localId, { softLocal: true });
     if (localRole && room) {
       const me = match.players.find((p) => p.id === room.localId);
       if (me && !me.role) me.role = localRole;
     }
-    // infer events
-    if (prevDel != null && match.delivered > prevDel) {
-      handleEvents([{ type: 'deliver', id: '?', name: 'Someone', colorId: 'green' }]);
-    }
-    if (prevFail != null && match.failed > prevFail) {
-      handleEvents([{ type: 'wrong', id: '?', name: '?' }]);
-    }
-    if (prevJam && JSON.stringify(match.jammed) !== prevJam) {
-      for (const c of Object.keys(match.jammed)) {
-        if (match.jammed[c] > 0) handleEvents([{ type: 'jam', colorId: c, tell: kidsMode }]);
-      }
-    }
-    if (prevCarry && room) {
-      const me = match.players.find((p) => p.id === room.localId);
-      const prevMe = prevCarry.split('|').find((s) => s.startsWith(room.localId + ':'));
-      const was = prevMe ? prevMe.split(':')[1] : '';
-      if (me && me.carrying && me.carrying !== 'null' && was === 'null') {
-        const pkg = match.packages.find((k) => k.id === me.carrying);
-        handleEvents([{ type: 'pickup', id: me.id, name: me.name, colorId: pkg ? pkg.colorId : 'red' }]);
-      }
-      if (me && me.misdirectT > 2.5) {
-        handleEvents([{ type: 'misdirect', targetId: me.id, targetName: me.name }]);
-      }
-    }
+    if (msg.events && msg.events.length) handleEvents(msg.events);
     if (match.phase === 'win') endMatch();
-  } else if (msg.type === 'again' && room.role === 'client') {
+  } else if (msg.type === 'again') {
     match = null;
     localRole = null;
     stopLoop();
     show('lobby');
+    if (room) renderLobby(room.players, room.role === 'host', room.code);
+  } else if (msg.type === 'error') {
+    toast(escapeHtml(msg.message || 'Error'), 'bad', 2200);
   }
 }
 
@@ -337,6 +292,7 @@ function wireRoom(r) {
   room = r;
   r.onLobby = (players, isHost, code) => {
     renderLobby(players, isHost, code);
+    if ($('kidsMode')) $('kidsMode').checked = !!r.kidsMode;
     SFX.join();
   };
   r.onMessage = onNetMessage;
@@ -399,12 +355,10 @@ function playAgain() {
   localRole = null;
   stopLoop();
   if (room.role === 'host') {
-    room.broadcast({ type: 'again' });
-    show('lobby');
-    renderLobby(room.players, true, room.code);
-  } else {
-    show('lobby');
+    room.send({ type: 'again' });
   }
+  show('lobby');
+  renderLobby(room.players, room.role === 'host', room.code);
 }
 
 function boot() {
@@ -421,9 +375,11 @@ function boot() {
   $('btnLeave').onclick = () => { SFX.click(); leaveToHome(); };
   $('btnAgain').onclick = playAgain;
   $('btnHome').onclick = () => { SFX.click(); leaveToHome(); };
-  $('kidsMode').onchange = () => { kidsMode = $('kidsMode').checked; };
+  $('kidsMode').onchange = () => {
+    kidsMode = $('kidsMode').checked;
+    if (room && room.role === 'host') room.send({ type: 'kids', kidsMode });
+  };
 
-  // saboteur action buttons
   document.querySelectorAll('#sabPad [data-action]').forEach((btn) => {
     btn.addEventListener('pointerdown', (e) => {
       e.stopPropagation();

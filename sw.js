@@ -1,6 +1,6 @@
 /* Quiet Courier service worker — bump CACHE on every release. */
 'use strict';
-const CACHE = 'quiet-courier-v1';
+const CACHE = 'quiet-courier-v2';
 const ASSETS = [
   './',
   'index.html',

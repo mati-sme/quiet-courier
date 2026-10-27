@@ -493,7 +493,7 @@ export function serializeFor(match, viewerId) {
   return snap;
 }
 
-export function applySnapshot(match, snap) {
+export function applySnapshot(match, snap, localId, opts) {
   if (!match) match = { players: [], packages: [], pets: [], jammed: {}, sabCooldown: {}, events: [] };
   match.phase = snap.phase;
   match.kidsMode = snap.kidsMode;
@@ -510,10 +510,25 @@ export function applySnapshot(match, snap) {
   match.sabCooldown = snap.sabCooldown || {};
   match.events = match.events || [];
 
+  const soft = opts && opts.softLocal;
   const byId = new Map((match.players || []).map((p) => [p.id, p]));
   match.players = (snap.players || []).map((sp) => {
     const prev = byId.get(sp.id);
     const role = sp.role != null ? sp.role : (prev && prev.role);
+    if (prev && soft && localId && sp.id === localId) {
+      const dx = sp.x - prev.x, dy = sp.y - prev.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < 48) {
+        Object.assign(prev, sp, {
+          role: role || prev.role,
+          x: prev.x + dx * 0.25,
+          y: prev.y + dy * 0.25,
+          vx: prev.vx || 0,
+          vy: prev.vy || 0,
+        });
+        return prev;
+      }
+    }
     return prev
       ? Object.assign(prev, sp, { role: role || prev.role, vx: prev.vx || 0, vy: prev.vy || 0 })
       : { ...sp, role: role || 'courier', vx: 0, vy: 0, action: null, misdirectT: sp.misdirectT || 0 };
@@ -522,6 +537,22 @@ export function applySnapshot(match, snap) {
   match.packages = (snap.packages || []).map((k) => ({ ...k }));
   match.pets = (snap.pets || []).map((pet) => ({ ...pet, vx: 0, vy: 0, wanderT: 1 }));
   return match;
+}
+
+/** Client-side prediction: move only the local player (no pickup/sab authority). */
+export function predictMove(match, localId, dx, dy, dt) {
+  if (!match || match.phase !== 'play') return;
+  applyInput(match, localId, dx, dy, null);
+  const p = match.players.find((pl) => pl.id === localId);
+  if (!p) return;
+  const nx = p.x + p.vx * SPEED * dt;
+  const ny = p.y + p.vy * SPEED * dt;
+  const pos = resolvePos(nx, ny);
+  p.x = pos.x; p.y = pos.y;
+  if (p.carrying) {
+    const pkg = match.packages.find((k) => k.id === p.carrying);
+    if (pkg) { pkg.x = p.x; pkg.y = p.y - 28; }
+  }
 }
 
 export function myRole(match, localId) {
